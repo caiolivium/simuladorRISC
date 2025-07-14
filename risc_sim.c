@@ -286,6 +286,6 @@ int main(int argc, char *argv[]) {
 
     load_program(argv[1]);
     execute();
-    print_state()
+    print_state();
     return 0;
 }
