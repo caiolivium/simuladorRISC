@@ -3,18 +3,17 @@
 #include <stdint.h>
 #include <string.h>
 
-// Tamanhos e limites
-#define MEM_SIZE 0x10000      // 64K palavras de 16 bits
-#define NUM_REGISTERS 16
-#define STACK_START 0x8000    // SP começa aqui
+#define MEM_SIZE 0x10000      //16 bits
+#define NUM_REGISTERS 16    
+#define STACK_START 0x8000    // SP inicial 
 
 // Registradores
-uint16_t registers[NUM_REGISTERS]; // R0 - R15 (R14 = SP, R15 = PC)
-uint16_t IR = 0;                   // Registrador de Instrução
+uint16_t registers[NUM_REGISTERS]; 
+uint16_t IR = 0;                   
 uint8_t FLAG_Z = 0;                // Zero
 uint8_t FLAG_C = 0;                // Carry
 
-// Memória (dados + instruções)
+// Memória 
 uint16_t memory[MEM_SIZE];
 
 // Funções auxiliares
@@ -25,29 +24,36 @@ void alu_flags(uint16_t a, uint16_t b, uint16_t result);
 uint16_t read_mem(uint16_t addr);
 void write_mem(uint16_t addr, uint16_t value);
 
-// Carrega o programa do arquivo de texto
 void load_program(const char* filename) {
     FILE *fp = fopen(filename, "r");
     if (!fp) {
         perror("Erro ao abrir arquivo");
         exit(1);
-    }
+        }
+   
 
     char line[32];
     while (fgets(line, sizeof(line), fp)) {
         unsigned int addr, value;
-        if (sscanf(line, "%x : %x", &addr, &value) == 2) {
+        if (sscanf(line, "%x : 0x%x", &addr, &value) == 2){
             if (addr < MEM_SIZE)
                 memory[addr] = (uint16_t)value;
         }
     }
     fclose(fp);
+   
+         //apagar isso aqui dps
+    printf("Programa carregado:\n"); 
+    for (int i = 0; i < 10; i++) {
+        printf("MEM[%04X] = 0x%04X\n", i, memory[i]);
+        }
+        //isso ai em cima é só pra ver se ta carregando certo
 }
 
 // Função que atualiza as flags Z e C
 void alu_flags(uint16_t a, uint16_t b, uint16_t result) {
     FLAG_Z = (result == 0);
-    FLAG_C = (b > a); // comparação sem sinal
+    FLAG_C = (result < a);
 }
 
 // Leitura simulada com mapeamento de E/S
@@ -83,8 +89,10 @@ void execute() {
     registers[15] = 0;           // PC
 
     while (1) {
-        uint16_t pc = registers[15]++;
+        uint16_t pc = registers[15];
         IR = memory[pc];
+        if (IR == 0xFFFF) break;
+        registers[15]++;
         uint16_t opcode = (IR >> 12) & 0xF;
 
         switch (opcode) {
@@ -111,10 +119,15 @@ void execute() {
             case 0x2: {
                 uint8_t rd = (IR >> 8) & 0xF;
                 uint8_t rm = IR & 0xF;
-                registers[rd] = read_mem(registers[rm]);
-                break;
-            }
+                uint16_t addr = registers[rm];
+                uint16_t val = read_mem(addr);
 
+                //verifica se endereço é valido, apagar depois
+                printf("LDR R%d <- MEM[R%d] (addr=0x%04X) = 0x%04X\n", rd, rm, addr, val);
+
+                registers[rd] = val;
+            break;
+            }
             // STR: MEM[Rm] = Rn
             case 0x3: {
                 uint8_t rn = IR & 0xF;
@@ -128,6 +141,9 @@ void execute() {
                 uint8_t rd = (IR >> 8) & 0xF;
                 uint8_t imm = IR & 0xFF;
                 registers[rd] = imm;
+
+                printf("MOV R%d = %d (0x%04X)\n", rd, imm, imm);
+
                 break;
             }
 
@@ -150,8 +166,13 @@ void execute() {
                 uint16_t res = registers[rm] + imm;
                 alu_flags(registers[rm], imm, res);
                 registers[rd] = res;
+
+                //verifica se valor é valido, apagar depois
+                printf("ADDI R%d = R%d (0x%04X) + %d → 0x%04X\n", rd, rm, registers[rm], imm, res);
+
                 break;
             }
+
 
             // SUB Rd = Rm - Rn
             case 0x7: {
@@ -237,10 +258,9 @@ void execute() {
 
             // POP Rd
             case 0xF: {
-                if (IR == 0xFFFF) return; // HALT
                 uint8_t rd = (IR >> 8) & 0xF;
                 registers[rd] = read_mem(registers[14]);
-                registers[14]++; // SP++
+                registers[14]++;
                 break;
             }
         }
@@ -254,6 +274,7 @@ void print_state() {
         printf("R%-2d: 0x%04X\n", i, registers[i]);
     }
 
+    //trocar isso pra printar somente oq foi usado de fato
     printf("\nMemória acessada:\n");
     for (int i = 0; i < MEM_SIZE; i++) {
         if (memory[i] != 0)
@@ -278,12 +299,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Uso: %s <arquivo_programa.txt>\n", argv[0]);
         return 1;
     }
-
-    // Zera os registradores
-    memset(registers, 0, sizeof(registers));
-    FLAG_Z = 0;
-    FLAG_C = 0;
-
+    
     load_program(argv[1]);
     execute();
     print_state();
