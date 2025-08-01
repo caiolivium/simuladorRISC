@@ -15,7 +15,7 @@ void load_program(const char* filename) {
     char line[32];
     while (fgets(line, sizeof(line), fp)) {
         unsigned int addr, value;
-        if (sscanf(line, "%x : 0x%x", &addr, &value) == 2) {
+        if (sscanf(line, "%x: 0x%x", &addr, &value) == 2) {
             if (addr < MEM_SIZE)
                 memory[addr] = (uint16_t)value;
         }

@@ -12,6 +12,6 @@ extern uint8_t FLAG_Z;
 extern uint8_t FLAG_C;
 
 void execute();
-void alu_flags(uint16_t a, uint16_t b, uint16_t result);
+void ula_flags(uint16_t a, uint16_t b, uint16_t result);
 
 #endif

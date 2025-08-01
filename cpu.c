@@ -8,27 +8,47 @@ uint16_t IR = 0;
 uint8_t FLAG_Z = 0;
 uint8_t FLAG_C = 0;
 
-void alu_flags(uint16_t a, uint16_t b, uint16_t result) {
+void ula_flags(uint16_t a, uint16_t b, uint16_t result) {
     FLAG_Z = (result == 0);
     FLAG_C = (result < a);
 }
 
+typedef struct {
+    uint8_t rd;
+    uint8_t rm;
+    uint8_t rn;
+    uint8_t imm8;
+    uint8_t imm4;
+} InstrFields;
+
+InstrFields decode_fields(uint16_t IR) {
+    InstrFields f;
+    f.rd   = (IR >> 8) & 0xF;
+    f.rm   = (IR >> 4) & 0xF;
+    f.rn   = IR & 0xF;
+    f.imm8 = IR & 0xFF;
+    f.imm4 = IR & 0xF;
+    return f;
+}
+
 void execute() {
-    registers[14] = STACK_START; // SP
-    registers[15] = 0;          // PC
+    registers[14] = STACK_START;
+    registers[15] = 0;
 
     while (1) {
         uint16_t pc = registers[15];
-        IR = memory[pc];
-        if (IR == 0xFFFF) break;
+        IR = read_mem(pc);  // <-- substituído
         registers[15]++;
+        if (IR == 0xFFFF || IR == 0xFF00) break;
+
         uint16_t opcode = (IR >> 12) & 0xF;
+        InstrFields f = decode_fields(IR);
 
         switch (opcode) {
             // JUMPs e Condicionais
             case 0x0: {
                 uint16_t cond = (IR >> 10) & 0x3;
-                int16_t offset = (int16_t)((IR & 0x03FF));
+                int16_t offset = (int16_t)(IR & 0x03FF);
                 if (offset & 0x0200) offset |= 0xFC00; // sinaliza
 
                 switch ((IR >> 10) & 0x7) {
@@ -44,151 +64,94 @@ void execute() {
                 break;
             }
 
-            // LDR: Rd = MEM[Rm]
-            case 0x2: {
-                uint8_t rd = (IR >> 8) & 0xF;
-                uint8_t rm = IR & 0xF;
-                uint16_t addr = registers[rm];
-                uint16_t val = read_mem(addr);
-
-                //verifica se endereço é valido, apagar depois
-                printf("LDR R%d <- MEM[R%d] (addr=0x%04X) = 0x%04X\n", rd, rm, addr, val);
-
-                registers[rd] = val;
-            break;
-            }
-            // STR: MEM[Rm] = Rn
-            case 0x3: {
-                uint8_t rn = IR & 0xF;
-                uint8_t rm = (IR >> 4) & 0xF;
-                write_mem(registers[rm], registers[rn]);
+            case 0x5: { // ADD
+                uint16_t res = registers[f.rm] + registers[f.rn];
+                ula_flags(registers[f.rm], registers[f.rn], res);
+                registers[f.rd] = res;
                 break;
             }
 
-            // MOV Rd, #Im
-            case 0x4: {
-                uint8_t rd = (IR >> 8) & 0xF;
-                uint8_t imm = IR & 0xFF;
-                registers[rd] = imm;
-
-                printf("MOV R%d = %d (0x%04X)\n", rd, imm, imm);
-
+            case 0x6: { // ADDI
+                uint16_t res = registers[f.rm] + f.imm4;
+                ula_flags(registers[f.rm], f.imm4, res);
+                registers[f.rd] = res;
                 break;
             }
 
-            // ADD Rd = Rm + Rn
-            case 0x5: {
-                uint8_t rd = (IR >> 8) & 0xF;
-                uint8_t rm = (IR >> 4) & 0xF;
-                uint8_t rn = IR & 0xF;
-                uint16_t res = registers[rm] + registers[rn];
-                alu_flags(registers[rm], registers[rn], res);
-                registers[rd] = res;
+            case 0x7: { // SUB
+                uint16_t res = registers[f.rm] - registers[f.rn];
+                ula_flags(registers[f.rm], registers[f.rn], res);
+                registers[f.rd] = res;
                 break;
             }
 
-            // ADDI Rd, Rm, #Im
-            case 0x6: {
-                uint8_t rd = (IR >> 8) & 0xF;
-                uint8_t rm = (IR >> 4) & 0xF;
-                uint8_t imm = IR & 0xF;
-                uint16_t res = registers[rm] + imm;
-                alu_flags(registers[rm], imm, res);
-                registers[rd] = res;
-
-                //verifica se valor é valido, apagar depois
-                printf("ADDI R%d = R%d (0x%04X) + %d → 0x%04X\n", rd, rm, registers[rm], imm, res);
-
+            case 0x8: { // SUBI
+                uint16_t res = registers[f.rm] - f.imm4;
+                ula_flags(registers[f.rm], f.imm4, res);
+                registers[f.rd] = res;
                 break;
             }
 
-            // SUB Rd = Rm - Rn
-            case 0x7: {
-                uint8_t rd = (IR >> 8) & 0xF;
-                uint8_t rm = (IR >> 4) & 0xF;
-                uint8_t rn = IR & 0xF;
-                uint16_t res = registers[rm] - registers[rn];
-                alu_flags(registers[rm], registers[rn], res);
-                registers[rd] = res;
+            case 0x4: { // MOV
+                registers[f.rd] = f.imm8;
                 break;
             }
 
-            // SUBI Rd, Rm, #Im
-            case 0x8: {
-                uint8_t rd = (IR >> 8) & 0xF;
-                uint8_t rm = (IR >> 4) & 0xF;
-                uint8_t imm = IR & 0xF;
-                uint16_t res = registers[rm] - imm;
-                alu_flags(registers[rm], imm, res);
-                registers[rd] = res;
+            case 0x2: { // LDR: Rd = MEM[Rm]
+                uint16_t addr = registers[f.rm];
+                registers[f.rd] = read_mem(addr);  // <-- substituído
                 break;
             }
 
-            // AND
-            case 0x9: {
-                uint8_t rd = (IR >> 8) & 0xF;
-                uint8_t rm = (IR >> 4) & 0xF;
-                uint8_t rn = IR & 0xF;
-                uint16_t res = registers[rm] & registers[rn];
-                alu_flags(registers[rm], registers[rn], res);
-                registers[rd] = res;
+            case 0x3: { // STR: MEM[Rm] = Rn
+                uint16_t addr = registers[f.rm];
+                write_mem(addr, registers[f.rn]);  // <-- substituído
                 break;
             }
 
-            // OR
-            case 0xA: {
-                uint8_t rd = (IR >> 8) & 0xF;
-                uint8_t rm = (IR >> 4) & 0xF;
-                uint8_t rn = IR & 0xF;
-                uint16_t res = registers[rm] | registers[rn];
-                alu_flags(registers[rm], registers[rn], res);
-                registers[rd] = res;
+            case 0xE: { // PUSH Rn
+                registers[14]--;
+                write_mem(registers[14], registers[f.rn]);  // <-- substituído
                 break;
             }
 
-            // SHR
-            case 0xB: {
-                uint8_t rd = (IR >> 8) & 0xF;
-                uint8_t rm = (IR >> 4) & 0xF;
-                uint8_t imm = IR & 0xF;
-                uint16_t res = registers[rm] >> imm;
-                alu_flags(registers[rm], imm, res);
-                registers[rd] = res;
-                break;
-            }
-
-            // SHL
-            case 0xC: {
-                uint8_t rd = (IR >> 8) & 0xF;
-                uint8_t rm = (IR >> 4) & 0xF;
-                uint8_t imm = IR & 0xF;
-                uint16_t res = registers[rm] << imm;
-                alu_flags(registers[rm], imm, res);
-                registers[rd] = res;
-                break;
-            }
-
-            // CMP Rm, Rn
-            case 0xD: {
-                uint8_t rm = (IR >> 4) & 0xF;
-                uint8_t rn = IR & 0xF;
-                alu_flags(registers[rm], registers[rn], registers[rm] - registers[rn]);
-                break;
-            }
-
-            // PUSH Rn
-            case 0xE: {
-                uint8_t rn = IR & 0xF;
-                registers[14]--; // SP--
-                write_mem(registers[14], registers[rn]);
-                break;
-            }
-
-            // POP Rd
-            case 0xF: {
-                uint8_t rd = (IR >> 8) & 0xF;
-                registers[rd] = read_mem(registers[14]);
+            case 0xF: { // POP Rd
+                registers[f.rd] = read_mem(registers[14]);  // <-- substituído
                 registers[14]++;
+                break;
+            }
+
+            case 0xD: { // CMP
+                uint16_t res = registers[f.rm] - registers[f.rn];
+                ula_flags(registers[f.rm], registers[f.rn], res);
+                break;
+            }
+
+            case 0xB: { // SHR
+                uint16_t res = registers[f.rm] >> f.imm4;
+                ula_flags(registers[f.rm], f.imm4, res);
+                registers[f.rd] = res;
+                break;
+            }
+
+            case 0xC: { // SHL
+                uint16_t res = registers[f.rm] << f.imm4;
+                ula_flags(registers[f.rm], f.imm4, res);
+                registers[f.rd] = res;
+                break;
+            }
+
+            case 0x9: { // AND
+                uint16_t res = registers[f.rm] & registers[f.rn];
+                ula_flags(registers[f.rm], registers[f.rn], res);
+                registers[f.rd] = res;
+                break;
+            }
+
+            case 0xA: { // OR
+                uint16_t res = registers[f.rm] | registers[f.rn];
+                ula_flags(registers[f.rm], registers[f.rn], res);
+                registers[f.rd] = res;
                 break;
             }
         }
